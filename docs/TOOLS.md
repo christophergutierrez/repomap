@@ -402,27 +402,46 @@ messages with fields of that type.
 
 ### find_implementations
 
-Find symbols that implement a given symbol.
+Find types that implement a trait, interface, or base class.  Works with
+languages that use explicit implementation syntax (Rust `impl Trait for Type`,
+Java/C#/TypeScript `extends`/`implements`, Python class inheritance, PHP
+`implements`/`use`, Dart `extends`/`implements`, JavaScript `extends`).
+Languages with implicit interface satisfaction (like Go) are not supported.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `repo` | string | yes | Repository identifier |
-| `symbol_id` | string | yes | Symbol ID to find implementations of |
+| `symbol_id` | string | yes | Symbol ID of the trait/interface/base class |
 
-**Note:** IMPLEMENTS edges are not yet populated in v0.3.  This tool currently
-returns empty results.
+**Returns:**
+```json
+{
+  "repo": "owner/reponame",
+  "symbol_id": "src/models.rs::Authenticatable#type",
+  "results": [
+    {
+      "id": "src/models.rs::User#type",
+      "relationship": "trait_impl",
+      "name": "User",
+      "kind": "type",
+      "language": "rust",
+      "file": "src/models.rs"
+    }
+  ]
+}
+```
 
 ---
 
 ### graph_query
 
-Query the knowledge graph directly.  Supports three relationship types and
+Query the knowledge graph directly.  Supports four relationship types and
 raw SQL SELECT for advanced use.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `repo` | string | yes | Repository identifier |
-| `cypher` | string | yes | Query: `DEFINES`, `CONTAINS`, `REFERENCES`, or a SQL `SELECT` |
+| `cypher` | string | yes | Query: `DEFINES`, `CONTAINS`, `REFERENCES`, `IMPLEMENTS`, or a SQL `SELECT` |
 
 **Relationship queries:**
 
@@ -431,6 +450,7 @@ raw SQL SELECT for advanced use.
 | `DEFINES src/main.rs` | All symbols defined in that file |
 | `CONTAINS src/lib.rs::Server#struct` | All children (methods, fields) of Server |
 | `REFERENCES User` | All symbols with fields referencing the User type |
+| `IMPLEMENTS Authenticatable` | All types implementing Authenticatable |
 
 **Returns:**
 ```json

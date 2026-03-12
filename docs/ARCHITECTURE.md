@@ -40,10 +40,11 @@ lookup for the offset, one file seek, done.  This is what makes `get_symbol`
 fast regardless of file size.
 
 **Knowledge graph** — A set of typed relationships between files and symbols,
-stored in SQLite tables.  Three edge types exist: DEFINES (file → symbol),
-CONTAINS (parent symbol → child symbol), and REFERENCES (protobuf field →
-type).  These enable queries like "what symbols does this file define?" or
-"what messages reference this type?" without scanning source code.
+stored in SQLite tables.  Four edge types exist: DEFINES (file → symbol),
+CONTAINS (parent symbol → child symbol), REFERENCES (protobuf field → type),
+and IMPLEMENTS (type → base type/trait/interface).  These enable queries like
+"what symbols does this file define?", "what messages reference this type?",
+or "what classes implement this interface?" without scanning source code.
 
 **Index** — The SQLite database plus raw source files stored on disk for a
 given repository.  Once built, the index persists across sessions — all query
@@ -180,7 +181,7 @@ back to `local/<dirname>`.
 
 ### SQLite Schema
 
-Each `.db` file contains five tables:
+Each `.db` file contains six tables:
 
 ```mermaid
 erDiagram
@@ -233,9 +234,16 @@ erDiagram
         text import_path
     }
 
+    impl_refs {
+        text from_symbol_id FK "Implementing type"
+        text to_type_name "Base type / trait / interface"
+        text kind "extends|implements|trait_impl"
+    }
+
     repo_meta ||--o{ symbols : "indexes"
     symbols ||--o| symbols : "parent"
     symbols ||--o{ proto_refs : "references"
+    symbols ||--o{ impl_refs : "implements"
 ```
 
 **Symbol IDs** follow the format `file_path::QualifiedName#kind`.  For example:
@@ -271,7 +279,7 @@ sequenceDiagram
 
 ## Knowledge Graph
 
-repomap builds a lightweight knowledge graph from three relationship types
+repomap builds a lightweight knowledge graph from four relationship types
 stored directly in SQLite (no external graph database required).
 
 ```mermaid
@@ -289,6 +297,12 @@ graph LR
     subgraph "REFERENCES (proto field → type)"
         M1["CreateRequest#message"] -->|references| M2["User#message"]
         M1 -->|references| M3["Role#enum"]
+    end
+
+    subgraph "IMPLEMENTS (type → base/trait/interface)"
+        C1["SqlRepository#class"] -->|implements| I1["IRepository#type"]
+        C2["User#type"] -->|trait_impl| T1["Display#type"]
+        C3["UserService#class"] -->|extends| B1["BaseService#class"]
     end
 ```
 
@@ -322,6 +336,31 @@ Query: find_dependents("myproto.proto::User#message")
 → All messages with fields that reference the User type
 ```
 
+### IMPLEMENTS
+
+The `impl_refs` table tracks explicit implementation and inheritance
+relationships.  This works with languages that use explicit syntax:
+
+| Language | Syntax | Edge kind |
+|---|---|---|
+| Rust | `impl Trait for Type` | `trait_impl` |
+| Java | `class Foo extends Bar implements Baz` | `extends` / `implements` |
+| C# | `class Foo : IBar, Baz` | `implements` / `extends` |
+| TypeScript | `class Foo extends Bar implements IBaz` | `extends` / `implements` |
+| Python | `class Foo(Bar, Baz):` | `extends` |
+| PHP | `class Foo implements Bar { use Baz; }` | `implements` / `trait_impl` |
+| Dart | `class Foo extends Bar implements Baz` | `extends` / `implements` |
+| JavaScript | `class Foo extends Bar` | `extends` |
+
+Languages with implicit interface satisfaction (like Go's structural typing)
+are not supported by `find_implementations` — use `find_dependents` for
+proto-level cross-references instead.
+
+```
+Query: find_implementations("src/models.rs::Authenticatable#type")
+→ All types that implement the Authenticatable trait
+```
+
 ### Graph Query Examples
 
 The `graph_query` tool accepts relationship-type queries:
@@ -331,6 +370,7 @@ The `graph_query` tool accepts relationship-type queries:
 | `DEFINES src/main.rs` | All symbols defined in main.rs |
 | `CONTAINS src/lib.rs::Server#struct` | All children (methods) of Server |
 | `REFERENCES User` | All symbols referencing the User type |
+| `IMPLEMENTS Authenticatable` | All types implementing Authenticatable |
 
 Raw SQL `SELECT` queries are also supported for advanced use cases.
 
@@ -510,6 +550,7 @@ repomap/
 │           ├── symbols.rs       # Symbol data structure
 │           ├── languages.rs     # Per-language extraction rules (13 langs)
 │           ├── imports.rs       # Import path extraction
+│           ├── impl_refs.rs     # Implementation/inheritance extraction
 │           ├── hierarchy.rs     # Parent-child resolution
 │           └── proto_refs.rs    # Protobuf field references
 └── tests/
