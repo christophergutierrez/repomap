@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# Linters / type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Local config / secrets
+.env
+.env.*
+
+# Project-specific: don't commit local indexes
+.code-index/
+
+# Claude Code local settings (may contain credentials from allowed commands)
+.claude/
+
+# Local working notes (may contain sensitive info)
+prompt.md
+
+# Rust
+target/
+Cargo.lock

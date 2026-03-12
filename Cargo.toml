@@ -1,0 +1,68 @@
+[package]
+name = "repomap"
+version = "0.3.0"
+edition = "2024"
+description = "Code knowledge graph — tree-sitter AST parsing, FTS5 search, and byte-offset symbol retrieval"
+
+[[bin]]
+name = "repomap"
+path = "rust/src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# SQLite
+rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
+
+# Tree-sitter core + grammars
+tree-sitter = "0.25"
+tree-sitter-python = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-java = "0.23"
+tree-sitter-c = "0.24"
+tree-sitter-lua = "0.5"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-php = "0.24"
+tree-sitter-dart = "0.1"
+tree-sitter-proto = "0.4"
+tree-sitter-sequel = "0.3"
+
+# File discovery & gitignore
+ignore = "0.4"
+walkdir = "2"
+
+# Hashing
+sha2 = "0.10"
+
+# HTTP (for GitHub API, AI summarizers)
+reqwest = { version = "0.12", features = ["json"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Path pattern matching
+globset = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

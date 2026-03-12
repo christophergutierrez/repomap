@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package sample.v1;
+
+// Role represents the access level of a user.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_VIEWER = 1;
+  ROLE_EDITOR = 2;
+  ROLE_ADMIN = 3;
+}
+
+// UserRequest is the input for user lookup.
+message UserRequest {
+  string user_id = 1;
+  Role role = 2;
+
+  // Address holds a user's mailing address.
+  message Address {
+    string street = 1;
+    string city = 2;
+    string country = 3;
+  }
+
+  Address address = 3;
+}
+
+// UserResponse contains the result of a user operation.
+message UserResponse {
+  string user_id = 1;
+  string display_name = 2;
+  Role role = 3;
+}
+
+// CreateUserRequest is the input for user creation.
+message CreateUserRequest {
+  string display_name = 1;
+  Role role = 2;
+}
+
+// UserService provides user management operations.
+service UserService {
+  // GetUser retrieves a user by ID.
+  rpc GetUser (UserRequest) returns (UserResponse);
+
+  // CreateUser creates a new user and returns it.
+  rpc CreateUser (CreateUserRequest) returns (UserResponse);
+}
