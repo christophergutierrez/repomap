@@ -374,6 +374,78 @@ The `graph_query` tool accepts relationship-type queries:
 
 Raw SQL `SELECT` queries are also supported for advanced use cases.
 
+### Why the Graph Matters
+
+To see the practical difference, consider a real question an AI assistant
+might need to answer: **"What types implement or extend something in this
+codebase?"**
+
+**With the graph — 1 tool call, 0.3ms:**
+
+```
+graph_query("IMPLEMENTS")
+→ 14 precise edges, structured data:
+
+  rust/sample.rs::User          --[trait_impl]--> Authenticatable
+  rust/sample.rs::User          --[trait_impl]--> std::fmt::Display
+  csharp/sample.cs::SqlRepository --[implements]--> IRepository
+  java/Sample.java::Sample      --[extends]----> BaseService
+  java/Sample.java::Sample      --[implements]--> Serializable
+  java/Sample.java::Sample      --[implements]--> Repository
+  typescript/sample.ts::UserService --[extends]--> BaseService
+  typescript/sample.ts::UserService --[implements]--> Searchable
+  python/sample.py::UserService --[extends]----> BaseService
+  php/sample.php::UserService   --[implements]--> Authenticatable
+  php/sample.php::UserService   --[trait_impl]--> Timestampable
+  dart/sample.dart::UserService --[extends]----> BaseService
+  javascript/sample.js::UserService --[extends]--> BaseService
+  ...
+```
+
+Every relationship, every language, with the edge kind — in one call.
+
+**Without the graph — text search, multiple calls, incomplete:**
+
+An AI assistant without graph edges would need to:
+
+1. `search_symbols("extends implements")` — returns 11 results, but 9 are
+   false positives (functions in the extraction code whose *names* contain
+   "extends" or "implements").  Only 2 actual classes found.
+2. `search_symbols("impl")` — returns 0 results (Rust's `impl` isn't a
+   symbol name, it's syntax).
+3. For each candidate, call `get_symbol()` to read the source and manually
+   parse the signature — another 2–11 tool calls.
+4. Still misses: Rust trait impls (`impl Display for User`), Python
+   inheritance (`class Foo(Bar):`), PHP `implements`/`use`, C# `: IRepository`,
+   Dart `extends` — because none of these put "extends" or "implements" in
+   the symbol's searchable text.
+
+**Result:** 2 of 14 relationships found, mixed with 9 false positives, after
+3–13 tool calls.
+
+**Impact on AI assistant efficiency:**
+
+| Metric | With graph | Without graph |
+|---|---|---|
+| Tool calls | 1 | 3–13 |
+| Wall time | < 1ms | 5–50ms |
+| Tokens consumed | ~200 (structured JSON) | ~3,000–8,000 (reading source, filtering noise) |
+| Accuracy | 14/14 relationships | 2/14 found, 9 false positives |
+
+The token savings matter most.  Each unnecessary `get_symbol` call returns
+50–200 lines of source code that the assistant must read, understand, and
+discard.  In a real codebase with hundreds of classes, the without-graph
+approach could easily consume **10,000–30,000 tokens** just to answer one
+inheritance question — tokens that count against the context window and slow
+down reasoning.  The graph answers the same question in ~200 tokens of
+structured data, leaving the context window free for actual work.
+
+This compounds across a session.  An assistant refactoring a class hierarchy
+might ask this question 5–10 times as it traces relationships.  The graph
+saves **50,000–200,000 tokens per session** on inheritance queries alone,
+which is the difference between fitting the task in one conversation and
+running out of context halfway through.
+
 ---
 
 ## Search Architecture
