@@ -36,7 +36,25 @@ Python · TypeScript · JavaScript · Go · Rust · Java · PHP · Dart · C# ·
 
 ## Installation
 
-### 1. Build from source
+### Quick install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/christophergutierrez/repomap/main/install.sh | sh
+```
+
+### Homebrew
+
+```sh
+brew install christophergutierrez/repomap/repomap
+```
+
+### Cargo
+
+```sh
+cargo install --git https://github.com/christophergutierrez/repomap
+```
+
+### Build from source
 
 ```bash
 cargo build --release
@@ -44,7 +62,11 @@ cargo build --release
 
 The binary is at `target/release/repomap`.
 
-### 2. Configure Claude Code
+---
+
+## Setup
+
+### 1. Configure Claude Code
 
 Add repomap to your user-level MCP config in `~/.claude.json`:
 
@@ -63,7 +85,7 @@ Replace `/path/to/repomap` with the absolute path to the built binary.
 
 Start a new Claude Code session after saving.  The MCP tools appear automatically.
 
-### 3. Build the initial index
+### 2. Build the initial index
 
 ```bash
 repomap index /path/to/your/repo --no-ai
@@ -76,7 +98,7 @@ The index persists on disk (`~/.code-index/`) and survives across sessions.
 Add `--no-ai` to skip AI-generated symbol summaries; omit it if you have an
 `ANTHROPIC_API_KEY` set and want richer search results.
 
-### 4. Set up the git hook for automatic updates
+### 3. Set up the git hook for automatic updates
 
 Add this to `.git/hooks/post-merge` in your repo (create the file if it
 doesn't exist, and make it executable with `chmod +x`):
@@ -92,7 +114,7 @@ fi
 After every `git pull`, this runs an incremental re-index in the background.
 Only files changed by the pull are re-parsed.
 
-### 5. Optional environment variables
+### 4. Optional environment variables
 
 | Variable | Purpose | Default |
 |---|---|---|

@@ -3,6 +3,11 @@ name = "repomap"
 version = "0.3.0"
 edition = "2024"
 description = "Code knowledge graph — tree-sitter AST parsing, FTS5 search, and byte-offset symbol retrieval"
+license = "MIT"
+repository = "https://github.com/christophergutierrez/repomap"
+homepage = "https://github.com/christophergutierrez/repomap"
+categories = ["development-tools", "command-line-utilities"]
+keywords = ["mcp", "code-index", "tree-sitter", "symbol-search"]
 
 [[bin]]
 name = "repomap"
