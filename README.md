@@ -72,7 +72,7 @@ The binary is at `target/release/repomap`.
 claude mcp add --transport stdio repomap /opt/homebrew/bin/repomap
 ```
 
-The path may differ depending on your install method — use `which repomap` to find it.
+The path may differ depending on your install method. Use `which repomap` to find it.
 
 Start a new Claude Code session after adding.  The MCP tools appear automatically.
 
