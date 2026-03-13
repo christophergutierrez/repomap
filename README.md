@@ -2,8 +2,8 @@
 
 ![repomap overview](repomap.jpg)
 
-An MCP server that gives AI assistants surgical access to large codebases —
-returning only the symbols and source they need instead of entire files.
+An MCP server that gives AI assistants surgical access to large codebases.
+It only returns the symbols and their sources, not entire files.
 
 ---
 
