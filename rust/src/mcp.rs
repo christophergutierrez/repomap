@@ -165,7 +165,7 @@ async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_
         }
         "index_repo" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let use_ai = args.get("use_ai").and_then(|v| v.as_bool()).unwrap_or(true);
+            let use_ai = args.get("use_ai").and_then(|v| v.as_bool()).unwrap_or(false);
             tools::index_repo(path, use_ai, store).await
         }
         "find_dependents" => {
@@ -464,7 +464,7 @@ fn tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Absolute path to the local repository"},
-                    "use_ai": {"type": "boolean", "description": "Use AI for symbol summaries (default true)", "default": true}
+                    "use_ai": {"type": "boolean", "description": "Use AI for symbol summaries (default false, not needed inside AI assistants)", "default": false}
                 },
                 "required": ["path"]
             }

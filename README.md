@@ -25,6 +25,7 @@ codebases at the symbol level:
 - Fetch the exact source of one symbol by ID
 - Search raw file text when symbol search isn't enough
 - Query cross-file relationships (proto field references, parent/child nesting)
+- Track token savings vs loading full files
 
 ---
 
@@ -58,9 +59,8 @@ cargo install --git https://github.com/christophergutierrez/repomap
 
 ```bash
 cargo build --release
+cargo install --path .
 ```
-
-The binary is at `target/release/repomap`.
 
 ---
 
@@ -88,14 +88,25 @@ The index persists on disk (`~/.code-index/`) and survives across sessions.
 
 To remove the hooks later: `repomap deinit`
 
-To view usage stats: `repomap stats`
+### 3. Optional: AI-enhanced summaries (CLI only)
 
-### 3. Optional environment variables
+When indexing from the command line, repomap can call an AI to generate
+one-line summaries for each symbol. This is optional — everything works
+without it, and indexing via MCP (from inside Claude Code) skips AI
+summaries by default since the AI assistant doesn't need them.
+
+```sh
+# CLI with AI summaries (requires API key)
+repomap index-repo /path/to/repo
+
+# CLI without AI summaries
+repomap index-repo /path/to/repo --no-ai
+```
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | AI symbol summaries | — |
-| `GOOGLE_API_KEY` | Gemini Flash symbol summaries (fallback) | — |
+| `ANTHROPIC_API_KEY` | AI symbol summaries (Anthropic Claude) | — |
+| `GOOGLE_API_KEY` | AI symbol summaries (Gemini Flash fallback) | — |
 | `CODE_INDEX_PATH` | Where indexes are stored | `~/.code-index/` |
 | `REPOMAP_LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `WARNING` |
 
@@ -119,6 +130,7 @@ To view usage stats: `repomap stats`
 | `find_implementations` | Find symbols that implement a given symbol |
 | `graph_query` | Execute a Cypher query on the relationship graph |
 | `invalidate_cache` | Delete an index to force a full re-index |
+| `gain` | Token savings summary — queries saved, percentage reduced, per-tool breakdown |
 
 ---
 
@@ -131,7 +143,7 @@ To view usage stats: `repomap stats`
    and constants along with their signatures, docstrings, byte offsets, and
    parent relationships.
 4. **Summarize** — optionally calls an AI to generate a one-line summary for
-   each symbol that lacks a docstring.
+   each symbol that lacks a docstring (CLI only, requires API key).
 5. **Store** — writes everything to a SQLite database with FTS5 for fast text
    search and byte-offset symbol retrieval.
 
@@ -143,6 +155,10 @@ a single file seek.
 ## Incremental re-indexing
 
 After the first full index, re-indexing only re-parses files that changed.
+If you ran `repomap init`, this happens automatically via git hooks on
+every pull and branch switch.
+
+For manual re-indexing:
 
 ```bash
 repomap index /path/to/repo --incremental --no-ai
@@ -154,9 +170,23 @@ files have their symbols removed.
 
 ---
 
+## Token savings
+
+repomap tracks how many tokens it saves compared to loading full files.
+Use the `gain` MCP tool to see a summary:
+
+- Total queries and tokens saved
+- Savings percentage
+- Per-tool breakdown (which tools save the most)
+
+Filter by repo or time range with the optional `repo` and `since_days` arguments.
+
+---
+
 ## Development
 
 ```bash
 cargo build --release
+cargo install --path .
 cargo test
 ```
