@@ -183,14 +183,23 @@ async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_
             let cypher = args.get("cypher").and_then(|v| v.as_str()).unwrap_or("");
             crate::graph::graph_query(repo, cypher, store)
         }
+        "gain" => {
+            let repo = args.get("repo").and_then(|v| v.as_str());
+            let since_days = args.get("since_days").and_then(|v| v.as_u64()).map(|d| d as u32);
+            handle_gain(stats_db, repo, since_days)
+        }
         _ => json!({"error": format!("Unknown tool: {tool_name}")}),
     };
 
     let response_text = serde_json::to_string_pretty(&result).unwrap_or_default();
 
+    // Don't record the gain tool itself in stats
     if let Some(db) = stats_db {
-        let duration_ms = start.elapsed().as_millis() as u64;
-        db.record(tool_name, repo_arg.as_deref(), duration_ms, response_text.len());
+        if tool_name != "gain" {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let full_file_bytes = estimate_full_file_bytes(tool_name, &args, store);
+            db.record(tool_name, repo_arg.as_deref(), duration_ms, response_text.len(), full_file_bytes);
+        }
     }
 
     json!({
@@ -203,6 +212,132 @@ async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_
             }]
         }
     })
+}
+
+fn handle_gain(stats_db: Option<&StatsDb>, repo: Option<&str>, since_days: Option<u32>) -> Value {
+    let db = match stats_db {
+        Some(db) => db,
+        None => return json!({"error": "Stats tracking not available"}),
+    };
+    let since_ts = since_days.map(crate::stats::days_ago_iso);
+    match db.gain(repo, since_ts.as_deref()) {
+        Ok(Some(gain)) => {
+            let tool_details: Vec<Value> = gain.by_tool.iter().map(|t| {
+                let pct = if t.full_tokens > 0 {
+                    (t.saved as f64 / t.full_tokens as f64) * 100.0
+                } else {
+                    0.0
+                };
+                json!({
+                    "tool": t.name,
+                    "count": t.count,
+                    "tokens_saved": t.saved,
+                    "savings_pct": format!("{pct:.1}%"),
+                    "avg_ms": format!("{:.0}", t.avg_ms),
+                })
+            }).collect();
+
+            json!({
+                "total_queries": gain.total_queries,
+                "full_file_tokens": gain.total_full_tokens,
+                "tokens_served": gain.total_output_tokens,
+                "tokens_saved": gain.total_saved,
+                "savings_pct": format!("{:.1}%", gain.pct_saved),
+                "avg_response_ms": format!("{:.0}", gain.avg_duration_ms),
+                "by_tool": tool_details,
+            })
+        }
+        Ok(None) => json!({
+            "message": "No savings data yet. Stats will appear after tool calls."
+        }),
+        Err(e) => json!({"error": e.to_string()}),
+    }
+}
+
+/// Estimate the full file size(s) that would have been loaded without repomap.
+fn estimate_full_file_bytes(tool_name: &str, args: &Value, store: &IndexStore) -> usize {
+    let repo = args.get("repo").and_then(|v| v.as_str()).unwrap_or("");
+    let (owner, name) = match tools::resolve_repo_pub(repo, store) {
+        Ok(r) => r,
+        Err(_) => return 0,
+    };
+    let content_dir = match store.content_dir_pub(&owner, &name) {
+        Ok(d) => d,
+        Err(_) => return 0,
+    };
+
+    match tool_name {
+        "get_symbol" | "find_dependents" | "find_implementations" => {
+            // Symbol ID format: file_path::qualified_name#kind
+            if let Some(sid) = args.get("symbol_id").and_then(|v| v.as_str()) {
+                file_size_from_symbol_id(sid, &content_dir)
+            } else {
+                0
+            }
+        }
+        "get_symbols" => {
+            // Sum unique file sizes for all symbol IDs
+            let ids = args
+                .get("symbol_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            let mut seen = std::collections::HashSet::new();
+            let mut total = 0usize;
+            for sid in ids {
+                if let Some(file) = sid.split("::").next() {
+                    if seen.insert(file.to_string()) {
+                        total += file_size_at(&content_dir, file);
+                    }
+                }
+            }
+            total
+        }
+        "get_file_outline" => {
+            if let Some(file) = args.get("file_path").and_then(|v| v.as_str()) {
+                file_size_at(&content_dir, file)
+            } else {
+                0
+            }
+        }
+        "search_symbols" | "search_text" => {
+            // Search replaces grepping through all files — use total repo content size
+            total_content_size(&content_dir)
+        }
+        _ => 0,
+    }
+}
+
+fn file_size_from_symbol_id(symbol_id: &str, content_dir: &std::path::Path) -> usize {
+    symbol_id
+        .split("::")
+        .next()
+        .map(|file| file_size_at(content_dir, file))
+        .unwrap_or(0)
+}
+
+fn file_size_at(content_dir: &std::path::Path, relative_path: &str) -> usize {
+    let path = content_dir.join(relative_path);
+    std::fs::metadata(&path).map(|m| m.len() as usize).unwrap_or(0)
+}
+
+fn total_content_size(dir: &std::path::Path) -> usize {
+    let mut total = 0usize;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        if let Ok(entries) = std::fs::read_dir(&d) {
+            for entry in entries.flatten() {
+                if let Ok(ft) = entry.file_type() {
+                    if ft.is_file() {
+                        total += entry.metadata().map(|m| m.len() as usize).unwrap_or(0);
+                    } else if ft.is_dir() {
+                        stack.push(entry.path());
+                    }
+                }
+            }
+        }
+    }
+    total
 }
 
 fn tool_definitions() -> Vec<Value> {
@@ -368,6 +503,17 @@ fn tool_definitions() -> Vec<Value> {
                     "cypher": {"type": "string", "description": "Query mentioning DEFINES, CONTAINS, or REFERENCES, or a raw SQL SELECT"}
                 },
                 "required": ["repo", "cypher"]
+            }
+        }),
+        json!({
+            "name": "gain",
+            "description": "Show token savings from using repomap vs loading full files. Returns total queries, tokens saved, savings percentage, and per-tool breakdown.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Filter to a specific repository (optional)"},
+                    "since_days": {"type": "integer", "description": "Only show last N days (optional)"}
+                }
             }
         }),
     ]

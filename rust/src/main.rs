@@ -42,8 +42,6 @@ enum Commands {
         /// Path to the git repository (defaults to current directory)
         path: Option<PathBuf>,
     },
-    /// Show usage statistics and token savings
-    Stats,
     /// Remove repomap git hooks
     Deinit {
         /// Path to the git repository (defaults to current directory)
@@ -208,17 +206,26 @@ async fn main() -> anyhow::Result<()> {
             println!("Index complete.");
             Ok(())
         }
-        Some(Commands::Stats) => {
-            let db = stats::StatsDb::open(None)?;
-            match db.summary()? {
-                Some(summary) => print!("{summary}"),
-                None => println!("No usage data yet. Stats will appear after MCP tool calls."),
-            }
-            Ok(())
-        }
         Some(Commands::Init { path }) => {
             let path = path.unwrap_or_else(|| std::env::current_dir().expect("Cannot determine current directory"));
             let path = path.canonicalize()?;
+
+            // Run initial index before installing hooks
+            println!("Indexing {} ...", path.display());
+            let store = storage::IndexStore::open_store(None)?;
+            let result = tools::index_repo(
+                &path.to_string_lossy(),
+                false,
+                &store,
+            ).await;
+            if let Some(err) = result.get("error") {
+                eprintln!("Error indexing: {}", err);
+                std::process::exit(1);
+            }
+            let file_count = result["file_count"].as_u64().unwrap_or(0);
+            let symbol_count = result["symbol_count"].as_u64().unwrap_or(0);
+            println!("Indexed: {file_count} files, {symbol_count} symbols");
+
             hooks::install_hooks(&path)?;
             Ok(())
         }

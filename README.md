@@ -76,36 +76,23 @@ The path may differ depending on your install method. Use `which repomap` to fin
 
 Start a new Claude Code session after adding.  The MCP tools appear automatically.
 
-### 2. Build the initial index
+### 2. Initialize a repo
 
-```bash
-repomap index /path/to/your/repo --no-ai
+```sh
+cd /path/to/your/repo
+repomap init
 ```
 
-Or use the `index_repo` MCP tool from within Claude Code — it takes a local path and indexes from disk.
+This indexes the repo and installs git hooks (`post-merge`, `post-checkout`)
+that automatically re-index when you pull or switch branches. One command, fully set up.
 
 The index persists on disk (`~/.code-index/`) and survives across sessions.
 
-Add `--no-ai` to skip AI-generated symbol summaries; omit it if you have an
-`ANTHROPIC_API_KEY` set and want richer search results.
+To remove the hooks later: `repomap deinit`
 
-### 3. Set up the git hook for automatic updates
+To view usage stats: `repomap stats`
 
-Add this to `.git/hooks/post-merge` in your repo (create the file if it
-doesn't exist, and make it executable with `chmod +x`):
-
-```sh
-#!/bin/sh
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-if command -v repomap >/dev/null 2>&1; then
-  repomap index "$REPO_ROOT" --incremental --no-ai &
-fi
-```
-
-After every `git pull`, this runs an incremental re-index in the background.
-Only files changed by the pull are re-parsed.
-
-### 4. Optional environment variables
+### 3. Optional environment variables
 
 | Variable | Purpose | Default |
 |---|---|---|

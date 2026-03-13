@@ -35,9 +35,20 @@ impl StatsDb {
                timestamp TEXT NOT NULL,
                duration_ms INTEGER NOT NULL,
                response_bytes INTEGER NOT NULL,
-               estimated_tokens INTEGER NOT NULL
+               estimated_tokens INTEGER NOT NULL,
+               full_file_bytes INTEGER NOT NULL DEFAULT 0
              );",
         )?;
+
+        // Migrate existing DBs that lack the column.
+        let has_col: bool = conn
+            .prepare("SELECT full_file_bytes FROM query_log LIMIT 0")
+            .is_ok();
+        if !has_col {
+            conn.execute_batch(
+                "ALTER TABLE query_log ADD COLUMN full_file_bytes INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
 
         Ok(Self { conn })
     }
@@ -49,12 +60,13 @@ impl StatsDb {
         repo: Option<&str>,
         duration_ms: u64,
         response_bytes: usize,
+        full_file_bytes: usize,
     ) {
         let estimated_tokens = response_bytes / 4;
         let timestamp = iso_now();
         if let Err(e) = self.conn.execute(
-            "INSERT INTO query_log (tool_name, repo, timestamp, duration_ms, response_bytes, estimated_tokens)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO query_log (tool_name, repo, timestamp, duration_ms, response_bytes, estimated_tokens, full_file_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
                 tool_name,
                 repo,
@@ -62,48 +74,61 @@ impl StatsDb {
                 duration_ms,
                 response_bytes as i64,
                 estimated_tokens as i64,
+                full_file_bytes as i64,
             ],
         ) {
             tracing::warn!("Failed to record stats: {e}");
         }
     }
 
-    /// Aggregate usage summary.
-    pub fn summary(&self) -> Result<Option<StatsSummary>> {
-        let total_queries: i64 =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM query_log", [], |r| r.get(0))?;
+    /// Clear all recorded stats.
+    pub fn reset(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM query_log", [])?;
+        Ok(())
+    }
+
+    /// Aggregate usage summary with optional filters.
+    pub fn summary(&self, repo: Option<&str>, since: Option<&str>) -> Result<Option<StatsSummary>> {
+        let (where_clause, params) = build_filter(repo, since, "");
+
+        let total_queries: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM query_log{where_clause}"),
+            rusqlite::params_from_iter(&params),
+            |r| r.get(0),
+        )?;
 
         if total_queries == 0 {
             return Ok(None);
         }
 
         let (total_tokens, avg_duration_ms): (i64, f64) = self.conn.query_row(
-            "SELECT COALESCE(SUM(estimated_tokens),0),
-                    COALESCE(AVG(duration_ms),0)
-             FROM query_log",
-            [],
+            &format!(
+                "SELECT COALESCE(SUM(estimated_tokens),0),
+                        COALESCE(AVG(duration_ms),0)
+                 FROM query_log{where_clause}"
+            ),
+            rusqlite::params_from_iter(&params),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
 
         let (first_query, last_query): (String, String) = self.conn.query_row(
-            "SELECT MIN(timestamp), MAX(timestamp) FROM query_log",
-            [],
+            &format!("SELECT MIN(timestamp), MAX(timestamp) FROM query_log{where_clause}"),
+            rusqlite::params_from_iter(&params),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
 
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare(&format!(
             "SELECT tool_name,
                     COUNT(*) as cnt,
                     SUM(estimated_tokens) as tok,
                     AVG(duration_ms) as avg_ms
-             FROM query_log
+             FROM query_log{where_clause}
              GROUP BY tool_name
-             ORDER BY cnt DESC",
-        )?;
+             ORDER BY cnt DESC"
+        ))?;
 
         let tool_stats: Vec<ToolStat> = stmt
-            .query_map([], |r| {
+            .query_map(rusqlite::params_from_iter(&params), |r| {
                 Ok(ToolStat {
                     name: r.get(0)?,
                     count: r.get(1)?,
@@ -122,6 +147,208 @@ impl StatsDb {
             last_query,
             by_tool: tool_stats,
         }))
+    }
+
+    /// Token savings summary for `repomap gain` with optional filters.
+    pub fn gain(&self, repo: Option<&str>, since: Option<&str>) -> Result<Option<GainSummary>> {
+        let (where_clause, params) = build_filter(repo, since, " AND full_file_bytes > 0");
+
+        let total_queries: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM query_log{where_clause}"),
+            rusqlite::params_from_iter(&params),
+            |r| r.get(0),
+        )?;
+
+        if total_queries == 0 {
+            return Ok(None);
+        }
+
+        let (total_output_tokens, total_full_tokens, avg_duration_ms): (i64, i64, f64) =
+            self.conn.query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(estimated_tokens),0),
+                            COALESCE(SUM(full_file_bytes / 4),0),
+                            COALESCE(AVG(duration_ms),0)
+                     FROM query_log{where_clause}"
+                ),
+                rusqlite::params_from_iter(&params),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?;
+
+        let total_saved = total_full_tokens - total_output_tokens;
+
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT tool_name,
+                    COUNT(*) as cnt,
+                    SUM(estimated_tokens) as out_tok,
+                    SUM(full_file_bytes / 4) as full_tok,
+                    AVG(duration_ms) as avg_ms
+             FROM query_log{where_clause}
+             GROUP BY tool_name
+             ORDER BY (SUM(full_file_bytes / 4) - SUM(estimated_tokens)) DESC"
+        ))?;
+
+        let by_tool: Vec<GainToolStat> = stmt
+            .query_map(rusqlite::params_from_iter(&params), |r| {
+                let out_tok: i64 = r.get(2)?;
+                let full_tok: i64 = r.get(3)?;
+                Ok(GainToolStat {
+                    name: r.get(0)?,
+                    count: r.get(1)?,
+                    output_tokens: out_tok,
+                    full_tokens: full_tok,
+                    saved: full_tok - out_tok,
+                    avg_ms: r.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let pct = if total_full_tokens > 0 {
+            (total_saved as f64 / total_full_tokens as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        Ok(Some(GainSummary {
+            total_queries: total_queries as u64,
+            total_output_tokens: total_output_tokens as u64,
+            total_full_tokens: total_full_tokens as u64,
+            total_saved: total_saved as u64,
+            pct_saved: pct,
+            avg_duration_ms,
+            by_tool,
+        }))
+    }
+}
+
+/// Build a WHERE clause from optional repo and since filters.
+fn build_filter(repo: Option<&str>, since: Option<&str>, extra: &str) -> (String, Vec<String>) {
+    let mut conditions = Vec::new();
+    let mut params = Vec::new();
+
+    if let Some(r) = repo {
+        conditions.push("repo = ?".to_string());
+        params.push(r.to_string());
+    }
+    if let Some(s) = since {
+        conditions.push("timestamp >= ?".to_string());
+        params.push(s.to_string());
+    }
+    if !extra.is_empty() {
+        conditions.push(extra.trim_start_matches(" AND ").to_string());
+    }
+
+    let clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conditions.join(" AND "))
+    };
+
+    (clause, params)
+}
+
+/// Compute an ISO 8601 timestamp N days ago from now.
+pub fn days_ago_iso(days: u32) -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .saturating_sub(days as u64 * 86400);
+
+    let days_epoch = secs / 86400;
+    let (year, month, day) = epoch_days_to_date(days_epoch as i64);
+    format!("{year:04}-{month:02}-{day:02}T00:00:00Z")
+}
+
+pub struct GainSummary {
+    pub total_queries: u64,
+    pub total_output_tokens: u64,
+    pub total_full_tokens: u64,
+    pub total_saved: u64,
+    pub pct_saved: f64,
+    pub avg_duration_ms: f64,
+    pub by_tool: Vec<GainToolStat>,
+}
+
+pub struct GainToolStat {
+    pub name: String,
+    pub count: i64,
+    pub output_tokens: i64,
+    pub full_tokens: i64,
+    pub saved: i64,
+    pub avg_ms: f64,
+}
+
+impl fmt::Display for GainSummary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "repomap Token Savings")?;
+        writeln!(f, "════════════════════════════════════════════════════════════")?;
+        writeln!(f)?;
+        writeln!(f, "Total queries:     {}", fmt_num(self.total_queries))?;
+        writeln!(f, "Full file tokens:  {}", fmt_num(self.total_full_tokens))?;
+        writeln!(f, "Tokens served:     {}", fmt_num(self.total_output_tokens))?;
+        writeln!(
+            f,
+            "Tokens saved:      {} ({:.1}%)",
+            fmt_num(self.total_saved),
+            self.pct_saved
+        )?;
+        writeln!(f, "Avg response time: {:.0}ms", self.avg_duration_ms)?;
+
+        // Efficiency bar
+        let bar_width: usize = 24;
+        let filled = ((self.pct_saved / 100.0) * bar_width as f64).round() as usize;
+        let empty = bar_width.saturating_sub(filled);
+        writeln!(
+            f,
+            "Efficiency:        {}{} {:.1}%",
+            "█".repeat(filled),
+            "░".repeat(empty),
+            self.pct_saved
+        )?;
+
+        writeln!(f)?;
+        writeln!(f, "By Tool")?;
+        writeln!(
+            f,
+            "───────────────────────────────────────────────────────────────────────"
+        )?;
+        writeln!(
+            f,
+            "  {:<22} {:>5}  {:>10}  {:>6}  {:>6}  {}",
+            "Tool", "Count", "Saved", "Avg%", "Time", "Impact"
+        )?;
+        writeln!(
+            f,
+            "───────────────────────────────────────────────────────────────────────"
+        )?;
+
+        let max_saved = self.by_tool.iter().map(|t| t.saved).max().unwrap_or(1).max(1);
+
+        for ts in &self.by_tool {
+            let pct = if ts.full_tokens > 0 {
+                (ts.saved as f64 / ts.full_tokens as f64) * 100.0
+            } else {
+                0.0
+            };
+            let bar_len = ((ts.saved as f64 / max_saved as f64) * 10.0).round() as usize;
+            writeln!(
+                f,
+                "  {:<22} {:>5}  {:>10}  {:>5.1}%  {:>4.0}ms  {}",
+                ts.name,
+                fmt_num(ts.count as u64),
+                fmt_num(ts.saved as u64),
+                pct,
+                ts.avg_ms,
+                "█".repeat(bar_len),
+            )?;
+        }
+        writeln!(
+            f,
+            "───────────────────────────────────────────────────────────────────────"
+        )?;
+        Ok(())
     }
 }
 

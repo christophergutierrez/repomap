@@ -16,6 +16,11 @@ use crate::storage::IndexStore;
 // Repo resolution
 // ---------------------------------------------------------------------------
 
+/// Public wrapper for resolve_repo, used by mcp.rs for stats estimation.
+pub fn resolve_repo_pub(repo: &str, store: &IndexStore) -> Result<(String, String)> {
+    resolve_repo(repo, store)
+}
+
 fn resolve_repo(repo: &str, store: &IndexStore) -> Result<(String, String)> {
     if let Some((owner, name)) = repo.split_once('/') {
         return Ok((owner.to_string(), name.to_string()));
