@@ -51,7 +51,7 @@ walkdir = "2"
 sha2 = "0.10"
 
 # HTTP (for GitHub API, AI summarizers)
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Logging
 tracing = "0.1"
