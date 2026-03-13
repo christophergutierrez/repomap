@@ -863,17 +863,25 @@ fn git_remote_owner_repo(path: &Path) -> Option<(String, String)> {
 fn parse_github_url(url: &str) -> std::result::Result<(String, String), String> {
     let url = url.trim_end_matches(".git");
 
-    // Simple owner/repo format.
-    if url.contains('/') && !url.contains("://") {
-        let parts: Vec<&str> = url.split('/').collect();
+    // SSH format: git@github.com:owner/repo
+    if let Some(path) = url.strip_prefix("git@github.com:") {
+        let parts: Vec<&str> = path.split('/').collect();
         if parts.len() >= 2 {
             return Ok((parts[0].to_string(), parts[1].to_string()));
         }
     }
 
-    // Full URL.
+    // HTTPS format: https://github.com/owner/repo
     if let Some(path) = url.strip_prefix("https://github.com/") {
         let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() >= 2 {
+            return Ok((parts[0].to_string(), parts[1].to_string()));
+        }
+    }
+
+    // Simple owner/repo format.
+    if url.contains('/') && !url.contains("://") && !url.contains(':') {
+        let parts: Vec<&str> = url.split('/').collect();
         if parts.len() >= 2 {
             return Ok((parts[0].to_string(), parts[1].to_string()));
         }
