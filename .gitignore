@@ -47,6 +47,9 @@ htmlcov/
 # Claude Code local settings (may contain credentials from allowed commands)
 .claude/
 
+# PAUL project management state
+.paul/
+
 # Local working notes (may contain sensitive info)
 prompt.md
 
