@@ -4,12 +4,14 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+use crate::stats::StatsDb;
 use crate::storage::IndexStore;
 use crate::tools;
 
 /// Run the MCP server over stdio.
 pub async fn serve_stdio() -> Result<()> {
     let store = IndexStore::open_store(None)?;
+    let stats_db = StatsDb::open(None).ok();
 
     let stdin = BufReader::new(tokio::io::stdin());
     let mut stdout = tokio::io::stdout();
@@ -48,7 +50,7 @@ pub async fn serve_stdio() -> Result<()> {
             "tools/list" => handle_list_tools(&id),
             "tools/call" => {
                 let params = request.get("params").cloned().unwrap_or(json!({}));
-                handle_call_tool(&id, &params, &store).await
+                handle_call_tool(&id, &params, &store, stats_db.as_ref()).await
             }
             "notifications/cancelled" | "notifications/initialized" => continue,
             _ => json!({
@@ -99,12 +101,14 @@ fn handle_list_tools(id: &Value) -> Value {
     })
 }
 
-async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore) -> Value {
+async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_db: Option<&StatsDb>) -> Value {
     let tool_name = params
         .get("name")
         .and_then(|n| n.as_str())
         .unwrap_or("");
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
+    let start = std::time::Instant::now();
+    let repo_arg = args.get("repo").and_then(|v| v.as_str()).map(String::from);
 
     let result = match tool_name {
         "list_repos" => tools::list_repos(store),
@@ -182,13 +186,20 @@ async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore) -> Val
         _ => json!({"error": format!("Unknown tool: {tool_name}")}),
     };
 
+    let response_text = serde_json::to_string_pretty(&result).unwrap_or_default();
+
+    if let Some(db) = stats_db {
+        let duration_ms = start.elapsed().as_millis() as u64;
+        db.record(tool_name, repo_arg.as_deref(), duration_ms, response_text.len());
+    }
+
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
             "content": [{
                 "type": "text",
-                "text": serde_json::to_string_pretty(&result).unwrap_or_default()
+                "text": response_text
             }]
         }
     })

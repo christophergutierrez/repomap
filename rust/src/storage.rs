@@ -12,9 +12,6 @@ use crate::parser::symbols::Symbol;
 /// Bump when schema changes incompatibly.
 const INDEX_VERSION: i64 = 4;
 
-/// Bytes per token estimate for savings tracking.
-const BYTES_PER_TOKEN: usize = 4;
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -812,62 +809,6 @@ pub struct RepoInfo {
     pub file_count: usize,
     pub languages: HashMap<String, usize>,
     pub index_version: i64,
-}
-
-// ---------------------------------------------------------------------------
-// Token savings tracker
-// ---------------------------------------------------------------------------
-
-pub struct TokenTracker {
-    savings_path: PathBuf,
-}
-
-impl TokenTracker {
-    pub fn new(base_path: Option<&Path>) -> Self {
-        let base = match base_path {
-            Some(p) => p.to_path_buf(),
-            None => {
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-                PathBuf::from(home).join(".code-index")
-            }
-        };
-        let _ = std::fs::create_dir_all(&base);
-        Self {
-            savings_path: base.join("_savings.json"),
-        }
-    }
-
-    /// Add tokens_saved to running total. Returns new cumulative total.
-    pub fn record_savings(&self, tokens_saved: usize) -> usize {
-        let mut data = self.load_data();
-        let total = data.get("total_tokens_saved")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize
-            + tokens_saved;
-        data.insert("total_tokens_saved".to_string(), serde_json::json!(total));
-        let _ = std::fs::write(&self.savings_path, serde_json::to_string(&data).unwrap_or_default());
-        total
-    }
-
-    /// Get current cumulative total without modifying it.
-    pub fn get_total_saved(&self) -> usize {
-        self.load_data()
-            .get("total_tokens_saved")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize
-    }
-
-    fn load_data(&self) -> serde_json::Map<String, serde_json::Value> {
-        std::fs::read_to_string(&self.savings_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
-    }
-}
-
-/// Estimate tokens saved.
-pub fn estimate_savings(raw_bytes: usize, response_bytes: usize) -> usize {
-    raw_bytes.saturating_sub(response_bytes) / BYTES_PER_TOKEN
 }
 
 // ---------------------------------------------------------------------------

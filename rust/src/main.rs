@@ -1,8 +1,10 @@
 mod config;
 mod discovery;
 mod graph;
+mod hooks;
 mod mcp;
 mod parser;
+mod stats;
 mod storage;
 mod summarizer;
 mod tools;
@@ -34,6 +36,18 @@ enum Commands {
         /// Skip AI-generated symbol summaries
         #[arg(long)]
         no_ai: bool,
+    },
+    /// Install git hooks for automatic reindexing
+    Init {
+        /// Path to the git repository (defaults to current directory)
+        path: Option<PathBuf>,
+    },
+    /// Show usage statistics and token savings
+    Stats,
+    /// Remove repomap git hooks
+    Deinit {
+        /// Path to the git repository (defaults to current directory)
+        path: Option<PathBuf>,
     },
     /// Index a GitHub repository
     IndexRepo {
@@ -192,6 +206,26 @@ async fn main() -> anyhow::Result<()> {
             }
 
             println!("Index complete.");
+            Ok(())
+        }
+        Some(Commands::Stats) => {
+            let db = stats::StatsDb::open(None)?;
+            match db.summary()? {
+                Some(summary) => print!("{summary}"),
+                None => println!("No usage data yet. Stats will appear after MCP tool calls."),
+            }
+            Ok(())
+        }
+        Some(Commands::Init { path }) => {
+            let path = path.unwrap_or_else(|| std::env::current_dir().expect("Cannot determine current directory"));
+            let path = path.canonicalize()?;
+            hooks::install_hooks(&path)?;
+            Ok(())
+        }
+        Some(Commands::Deinit { path }) => {
+            let path = path.unwrap_or_else(|| std::env::current_dir().expect("Cannot determine current directory"));
+            let path = path.canonicalize()?;
+            hooks::remove_hooks(&path)?;
             Ok(())
         }
         Some(Commands::IndexRepo {
