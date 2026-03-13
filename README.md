@@ -68,22 +68,13 @@ The binary is at `target/release/repomap`.
 
 ### 1. Configure Claude Code
 
-Add repomap to your user-level MCP config in `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "repomap": {
-      "type": "stdio",
-      "command": "/path/to/repomap"
-    }
-  }
-}
+```sh
+claude mcp add --transport stdio repomap /opt/homebrew/bin/repomap
 ```
 
-Replace `/path/to/repomap` with the absolute path to the built binary.
+The path may differ depending on your install method — use `which repomap` to find it.
 
-Start a new Claude Code session after saving.  The MCP tools appear automatically.
+Start a new Claude Code session after adding.  The MCP tools appear automatically.
 
 ### 2. Build the initial index
 
