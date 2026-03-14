@@ -1,26 +1,26 @@
 class Repomap < Formula
   desc "MCP server for surgical codebase access via tree-sitter symbol indexing"
   homepage "https://github.com/christophergutierrez/repomap"
-  version "0.3.0"
+  version "0.4.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/christophergutierrez/repomap/releases/download/v0.3.0/repomap-aarch64-apple-darwin.tar.gz"
-      sha256 "3536e105222c9456ee63b784e05baad781676753beb5a557c8067d9a86de7f01"
+      url "https://github.com/christophergutierrez/repomap/releases/download/v0.4.0/repomap-aarch64-apple-darwin.tar.gz"
+      sha256 "a01d7a4571565bf8b8bc1b3ef3cb698cb19d0a33675268803046e9bd683a667b"
     elsif Hardware::CPU.intel?
-      url "https://github.com/christophergutierrez/repomap/releases/download/v0.3.0/repomap-x86_64-apple-darwin.tar.gz"
-      sha256 "5ac71fa404f43795da091fe65d3de62992ea863c05c52ae13061826ddf174c91"
+      url "https://github.com/christophergutierrez/repomap/releases/download/v0.4.0/repomap-x86_64-apple-darwin.tar.gz"
+      sha256 "1adc75828cb429ee6b144b7db73fc24445aedf861e659366466d268258fa21b5"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/christophergutierrez/repomap/releases/download/v0.3.0/repomap-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "e245f16733161655ffa6b92e2907b485785ffbb91b44deee6bd2a73fed003a13"
+      url "https://github.com/christophergutierrez/repomap/releases/download/v0.4.0/repomap-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "397308790eca9279c3a95a1b3fdcd5001d03c19e62120123f671dd338e9d10ef"
     elsif Hardware::CPU.intel?
-      url "https://github.com/christophergutierrez/repomap/releases/download/v0.3.0/repomap-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "11366bcc7658002ae9419816a9ce1ab110caceeaa560ee0ff36baacc526657fd"
+      url "https://github.com/christophergutierrez/repomap/releases/download/v0.4.0/repomap-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "d3cbcc6509143868cc9e5f35c5dcaea7ae693371391287d3bccf436c0867c68a"
     end
   end
 
