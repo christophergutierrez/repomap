@@ -188,24 +188,24 @@ Filter by repo or time range with the optional `repo` and `since_days` arguments
 The `graph_query` tool supports Mermaid diagram output. Pass `format: "mermaid"`
 to get a renderable graph instead of raw JSON rows.
 
-For example, querying all inheritance relationships:
-
 ```
-graph_query(repo="owner/repo", cypher="IMPLEMENTS", format="mermaid")
+graph_query(repo="owner/repo", cypher="REFERENCES", format="mermaid")
 ```
 
-Returns a Mermaid diagram you can paste into any Markdown viewer:
+Returns a Mermaid diagram you can paste into any Markdown viewer — instantly
+shows the type dependency graph without reading any `.proto` files:
 
 ```mermaid
 graph LR
-    User["User"] -->|trait_impl| Authenticatable["Authenticatable"]
-    UserService["UserService"] -->|extends| BaseService["BaseService"]
-    SqlRepository["SqlRepository"] -->|implements| IRepository["IRepository"]
+    CreateUserRequest["CreateUserRequest"] -->|.role| Role["Role"]
+    UserRequest["UserRequest"] -->|.role| Role["Role"]
+    UserRequest["UserRequest"] -->|.address| Address["Address"]
+    UserResponse["UserResponse"] -->|.role| Role["Role"]
 ```
 
-Works with all four relationship types: `IMPLEMENTS` (inheritance trees),
-`CONTAINS` (class/method structure), `DEFINES` (file contents), and
-`REFERENCES` (proto field types).
+Works with all four relationship types: `REFERENCES` (proto type dependencies),
+`IMPLEMENTS` (inheritance trees), `CONTAINS` (class/method structure), and
+`DEFINES` (file contents).
 
 ---
 

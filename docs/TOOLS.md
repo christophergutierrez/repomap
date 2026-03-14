@@ -470,10 +470,10 @@ Query the knowledge graph directly.  Supports four relationship types.
 ```json
 {
   "repo": "owner/reponame",
-  "cypher": "IMPLEMENTS",
+  "cypher": "REFERENCES",
   "format": "mermaid",
-  "mermaid": "graph LR\n    User[\"User\"] -->|trait_impl| Authenticatable[\"Authenticatable\"]\n    ...",
-  "row_count": 13,
+  "mermaid": "graph LR\n    CreateUserRequest[\"CreateUserRequest\"] -->|.role| Role[\"Role\"]\n    ...",
+  "row_count": 4,
   "_meta": { "timing_ms": 0.3 }
 }
 ```
@@ -482,10 +482,10 @@ Paste the `mermaid` value into any Markdown viewer to render the diagram:
 
 ```mermaid
 graph LR
-    User["User"] -->|trait_impl| Authenticatable["Authenticatable"]
-    UserService["UserService"] -->|implements| Authenticatable["Authenticatable"]
-    Sample["Sample"] -->|extends| BaseService["BaseService"]
-    SqlRepository["SqlRepository"] -->|implements| IRepository["IRepository"]
+    CreateUserRequest["CreateUserRequest"] -->|.role| Role["Role"]
+    UserRequest["UserRequest"] -->|.role| Role["Role"]
+    UserRequest["UserRequest"] -->|.address| Address["Address"]
+    UserResponse["UserResponse"] -->|.role| Role["Role"]
 ```
 
 **Notes:**
