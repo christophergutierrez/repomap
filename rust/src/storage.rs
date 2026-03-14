@@ -502,6 +502,7 @@ impl IndexStore {
         let head = repo_path.and_then(git_head).unwrap_or_default();
         let conn = Connection::open(&db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL")?;
+        conn.execute_batch("BEGIN")?;
 
         // Load current metadata.
         let (source_files_json, file_hashes_json): (String, String) = conn.query_row(
@@ -585,6 +586,7 @@ impl IndexStore {
             ],
         )?;
 
+        conn.execute_batch("COMMIT")?;
         drop(conn);
 
         // Update raw files on disk.
@@ -755,6 +757,22 @@ impl IndexStore {
         Ok(repos)
     }
 
+    /// Resolve a repo identifier ("owner/repo" or just "name") to (owner, name).
+    pub fn resolve_repo(&self, repo: &str) -> Result<(String, String)> {
+        if let Some((owner, name)) = repo.split_once('/') {
+            return Ok((owner.to_string(), name.to_string()));
+        }
+        let repos = self.list_repos()?;
+        for r in &repos {
+            if r.repo.ends_with(&format!("/{repo}")) {
+                if let Some((o, n)) = r.repo.split_once('/') {
+                    return Ok((o.to_string(), n.to_string()));
+                }
+            }
+        }
+        anyhow::bail!("Repository not found: {repo}")
+    }
+
     /// Delete an index and its raw files.
     pub fn delete_index(&self, owner: &str, name: &str) -> Result<bool> {
         let db = self.index_path(owner, name)?;
@@ -812,23 +830,11 @@ pub struct RepoInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Timestamp helper (no chrono dep — just use strftime-like via std)
+// Timestamp helper
 // ---------------------------------------------------------------------------
 
 fn chrono_now() -> String {
-    // Use system command to avoid pulling in chrono crate.
-    std::process::Command::new("date")
-        .args(["--iso-8601=seconds"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string())
+    crate::stats::iso_now()
 }
 
 // ---------------------------------------------------------------------------

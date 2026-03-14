@@ -19,7 +19,7 @@ use crate::storage::IndexStore;
 pub fn find_dependents(repo: &str, symbol_id: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
 
-    let (owner, name) = match resolve(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -98,7 +98,7 @@ pub fn find_dependents(repo: &str, symbol_id: &str, store: &IndexStore) -> Value
 pub fn find_implementations(repo: &str, symbol_id: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
 
-    let (owner, name) = match resolve(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -179,7 +179,7 @@ pub fn find_implementations(repo: &str, symbol_id: &str, store: &IndexStore) -> 
 pub fn graph_query(repo: &str, cypher: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
 
-    let (owner, name) = match resolve(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -206,8 +206,10 @@ pub fn graph_query(repo: &str, cypher: &str, store: &IndexStore) -> Value {
     } else if cypher_upper.contains("DEFINES") {
         query_defines(&conn, cypher)
     } else {
-        // Fallback: try to execute as raw SQL for power users.
-        query_raw_sql(&conn, cypher)
+        Err(anyhow::anyhow!(
+            "Unrecognized query. Use keywords DEFINES, CONTAINS, REFERENCES, or IMPLEMENTS, \
+             or use find_dependents / find_implementations for common lookups."
+        ))
     };
 
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -395,44 +397,7 @@ fn extract_arg(cypher: &str, keyword: &str) -> Option<String> {
     }
 }
 
-fn query_raw_sql(conn: &Connection, sql: &str) -> Result<Vec<Vec<Value>>> {
-    // Safety: only allow SELECT queries.
-    let trimmed = sql.trim_start().to_uppercase();
-    if !trimmed.starts_with("SELECT") {
-        anyhow::bail!("Only SELECT queries are allowed");
-    }
-
-    let mut stmt = conn.prepare(sql)?;
-    let col_count = stmt.column_count();
-
-    let mut rows = Vec::new();
-    let mut raw = stmt.query([])?;
-    while let Some(r) = raw.next()? {
-        let mut row = Vec::new();
-        for i in 0..col_count {
-            let val: String = r.get::<_, String>(i).unwrap_or_default();
-            row.push(json!(val));
-        }
-        rows.push(row);
-    }
-    Ok(rows)
-}
-
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
 
-fn resolve(repo: &str, store: &IndexStore) -> Result<(String, String)> {
-    if let Some((owner, name)) = repo.split_once('/') {
-        return Ok((owner.to_string(), name.to_string()));
-    }
-    let repos = store.list_repos()?;
-    for r in &repos {
-        if r.repo.ends_with(&format!("/{repo}")) {
-            if let Some((o, n)) = r.repo.split_once('/') {
-                return Ok((o.to_string(), n.to_string()));
-            }
-        }
-    }
-    anyhow::bail!("Repository not found: {repo}")
-}

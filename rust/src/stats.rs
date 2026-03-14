@@ -408,7 +408,7 @@ fn fmt_num(n: u64) -> String {
     result.chars().rev().collect()
 }
 
-fn iso_now() -> String {
+pub fn iso_now() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

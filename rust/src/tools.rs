@@ -18,23 +18,7 @@ use crate::storage::IndexStore;
 
 /// Public wrapper for resolve_repo, used by mcp.rs for stats estimation.
 pub fn resolve_repo_pub(repo: &str, store: &IndexStore) -> Result<(String, String)> {
-    resolve_repo(repo, store)
-}
-
-fn resolve_repo(repo: &str, store: &IndexStore) -> Result<(String, String)> {
-    if let Some((owner, name)) = repo.split_once('/') {
-        return Ok((owner.to_string(), name.to_string()));
-    }
-    // Search by name.
-    let repos = store.list_repos()?;
-    for r in &repos {
-        if r.repo.ends_with(&format!("/{repo}")) {
-            if let Some((o, n)) = r.repo.split_once('/') {
-                return Ok((o.to_string(), n.to_string()));
-            }
-        }
-    }
-    anyhow::bail!("Repository not found: {repo}")
+    store.resolve_repo(repo)
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +46,7 @@ pub fn list_repos(store: &IndexStore) -> Value {
 
 pub fn get_repo_outline(repo: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -133,7 +117,7 @@ pub fn get_repo_outline(repo: &str, store: &IndexStore) -> Value {
 
 pub fn get_file_tree(repo: &str, path_prefix: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -267,7 +251,7 @@ fn dict_to_tree_list(map: &serde_json::Map<String, Value>) -> Vec<Value> {
 
 pub fn get_file_outline(repo: &str, file_path: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -366,7 +350,7 @@ pub fn get_file_outline(repo: &str, file_path: &str, store: &IndexStore) -> Valu
 
 pub fn get_symbol(repo: &str, symbol_id: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -440,7 +424,7 @@ pub fn get_symbol(repo: &str, symbol_id: &str, store: &IndexStore) -> Value {
 
 pub fn get_symbols(repo: &str, symbol_ids: &[String], store: &IndexStore) -> Value {
     let start = Instant::now();
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -512,7 +496,7 @@ pub fn search_symbols(
     let start = Instant::now();
     let max_results = max_results.clamp(1, 100);
 
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -592,7 +576,7 @@ pub fn search_text(repo: &str, query: &str, file_pattern: Option<&str>, max_resu
     let start = Instant::now();
     let max_results = max_results.clamp(1, 100);
 
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
@@ -671,7 +655,7 @@ pub fn search_text(repo: &str, query: &str, file_pattern: Option<&str>, max_resu
 // ---------------------------------------------------------------------------
 
 pub fn invalidate_cache(repo: &str, store: &IndexStore) -> Value {
-    let (owner, name) = match resolve_repo(repo, store) {
+    let (owner, name) = match store.resolve_repo(repo) {
         Ok(r) => r,
         Err(e) => return json!({"error": e.to_string()}),
     };
