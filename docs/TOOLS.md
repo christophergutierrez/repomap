@@ -435,13 +435,13 @@ Languages with implicit interface satisfaction (like Go) are not supported.
 
 ### graph_query
 
-Query the knowledge graph directly.  Supports four relationship types and
-raw SQL SELECT for advanced use.
+Query the knowledge graph directly.  Supports four relationship types.
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `repo` | string | yes | Repository identifier |
-| `cypher` | string | yes | Query: `DEFINES`, `CONTAINS`, `REFERENCES`, `IMPLEMENTS`, or a SQL `SELECT` |
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `repo` | string | yes | — | Repository identifier |
+| `cypher` | string | yes | — | Query mentioning `DEFINES`, `CONTAINS`, `REFERENCES`, or `IMPLEMENTS` |
+| `format` | string | no | `"json"` | Output format: `"json"` for structured rows, `"mermaid"` for a diagram |
 
 **Relationship queries:**
 
@@ -452,7 +452,7 @@ raw SQL SELECT for advanced use.
 | `REFERENCES User` | All symbols with fields referencing the User type |
 | `IMPLEMENTS Authenticatable` | All types implementing Authenticatable |
 
-**Returns:**
+**Returns (JSON format, default):**
 ```json
 {
   "repo": "owner/reponame",
@@ -466,9 +466,33 @@ raw SQL SELECT for advanced use.
 }
 ```
 
+**Returns (Mermaid format):**
+```json
+{
+  "repo": "owner/reponame",
+  "cypher": "IMPLEMENTS",
+  "format": "mermaid",
+  "mermaid": "graph LR\n    User[\"User\"] -->|trait_impl| Authenticatable[\"Authenticatable\"]\n    ...",
+  "row_count": 13,
+  "_meta": { "timing_ms": 0.3 }
+}
+```
+
+Paste the `mermaid` value into any Markdown viewer to render the diagram:
+
+```mermaid
+graph LR
+    User["User"] -->|trait_impl| Authenticatable["Authenticatable"]
+    UserService["UserService"] -->|implements| Authenticatable["Authenticatable"]
+    Sample["Sample"] -->|extends| BaseService["BaseService"]
+    SqlRepository["SqlRepository"] -->|implements| IRepository["IRepository"]
+```
+
 **Notes:**
-- Raw SQL queries must start with `SELECT` (safety check).
-- Only read queries are allowed.
+- Only the four structured relationship types are supported. Unrecognized
+  queries return an error suggesting the appropriate tool.
+- Mermaid output works with all four relationship types. Most useful with
+  `IMPLEMENTS` (inheritance trees) and `CONTAINS` (class structure).
 
 ---
 
@@ -521,7 +545,6 @@ remote.
 
 | Flag | Description |
 |---|---|
-| `--incremental` | Only re-index changed files |
 | `--no-ai` | Skip AI summaries |
 
 ### `repomap` (no arguments)

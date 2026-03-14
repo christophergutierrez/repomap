@@ -181,7 +181,8 @@ async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_
         "graph_query" => {
             let repo = args.get("repo").and_then(|v| v.as_str()).unwrap_or("");
             let cypher = args.get("cypher").and_then(|v| v.as_str()).unwrap_or("");
-            crate::graph::graph_query(repo, cypher, store)
+            let format = args.get("format").and_then(|v| v.as_str()).unwrap_or("json");
+            crate::graph::graph_query(repo, cypher, format, store)
         }
         "gain" => {
             let repo = args.get("repo").and_then(|v| v.as_str());
@@ -495,12 +496,13 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "graph_query",
-            "description": "Query relationships between symbols: DEFINES (file→symbol), CONTAINS (parent→child), REFERENCES (proto field refs), IMPLEMENTS (type→base/trait/interface). Mention the relationship type in your query, or pass raw SQL SELECT.",
+            "description": "Query relationships between symbols: DEFINES (file→symbol), CONTAINS (parent→child), REFERENCES (proto field refs), IMPLEMENTS (type→base/trait/interface). Mention the relationship type in your query. Set format to 'mermaid' for a visual diagram.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "repo": {"type": "string", "description": "Repository identifier"},
-                    "cypher": {"type": "string", "description": "Query mentioning DEFINES, CONTAINS, or REFERENCES, or a raw SQL SELECT"}
+                    "cypher": {"type": "string", "description": "Query mentioning DEFINES, CONTAINS, REFERENCES, or IMPLEMENTS"},
+                    "format": {"type": "string", "enum": ["json", "mermaid"], "default": "json", "description": "Output format: 'json' (default) for structured rows, 'mermaid' for a Mermaid diagram"}
                 },
                 "required": ["repo", "cypher"]
             }

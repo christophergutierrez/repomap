@@ -174,9 +174,11 @@ pub fn find_implementations(repo: &str, symbol_id: &str, store: &IndexStore) -> 
 ///   - DEFINES: File → Symbol relationships
 ///   - CONTAINS: Symbol → Symbol parent/child
 ///   - REFERENCES: Symbol → Symbol via proto_refs
+///   - IMPLEMENTS: Type → Base/Trait/Interface via impl_refs
 ///
-/// For arbitrary Cypher, returns an error suggesting specific tools.
-pub fn graph_query(repo: &str, cypher: &str, store: &IndexStore) -> Value {
+/// When `format` is `"mermaid"`, returns a Mermaid graph diagram instead of
+/// raw rows. Paste the output into any Markdown viewer to visualize.
+pub fn graph_query(repo: &str, cypher: &str, format: &str, store: &IndexStore) -> Value {
     let start = Instant::now();
 
     let (owner, name) = match store.resolve_repo(repo) {
@@ -194,39 +196,70 @@ pub fn graph_query(repo: &str, cypher: &str, store: &IndexStore) -> Value {
         Err(e) => return json!({"error": e.to_string()}),
     };
 
-    // Try to handle common Cypher patterns.
+    // Detect which relationship type is being queried.
     let cypher_upper = cypher.to_uppercase();
 
-    let rows = if cypher_upper.contains("REFERENCES") {
-        query_references(&conn, cypher)
+    let query_type = if cypher_upper.contains("REFERENCES") {
+        QueryType::References
     } else if cypher_upper.contains("IMPLEMENTS") {
-        query_implements(&conn, cypher)
+        QueryType::Implements
     } else if cypher_upper.contains("CONTAINS") {
-        query_contains(&conn, cypher)
+        QueryType::Contains
     } else if cypher_upper.contains("DEFINES") {
-        query_defines(&conn, cypher)
+        QueryType::Defines
     } else {
-        Err(anyhow::anyhow!(
-            "Unrecognized query. Use keywords DEFINES, CONTAINS, REFERENCES, or IMPLEMENTS, \
-             or use find_dependents / find_implementations for common lookups."
-        ))
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        return json!({
+            "error": "Unrecognized query. Use keywords DEFINES, CONTAINS, REFERENCES, or IMPLEMENTS, \
+                      or use find_dependents / find_implementations for common lookups.",
+            "_meta": {"timing_ms": elapsed}
+        });
+    };
+
+    let rows = match query_type {
+        QueryType::References => query_references(&conn, cypher),
+        QueryType::Implements => query_implements(&conn, cypher),
+        QueryType::Contains => query_contains(&conn, cypher),
+        QueryType::Defines => query_defines(&conn, cypher),
     };
 
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     match rows {
-        Ok(rows) => json!({
-            "repo": format!("{owner}/{name}"),
-            "cypher": cypher,
-            "rows": rows,
-            "row_count": rows.len(),
-            "_meta": {"timing_ms": elapsed}
-        }),
+        Ok(rows) => {
+            if format == "mermaid" {
+                let mermaid = rows_to_mermaid(&rows, query_type);
+                json!({
+                    "repo": format!("{owner}/{name}"),
+                    "cypher": cypher,
+                    "format": "mermaid",
+                    "mermaid": mermaid,
+                    "row_count": rows.len(),
+                    "_meta": {"timing_ms": elapsed}
+                })
+            } else {
+                json!({
+                    "repo": format!("{owner}/{name}"),
+                    "cypher": cypher,
+                    "rows": rows,
+                    "row_count": rows.len(),
+                    "_meta": {"timing_ms": elapsed}
+                })
+            }
+        }
         Err(e) => json!({
             "error": format!("Query error: {e}. Use find_dependents or find_implementations for common queries."),
             "_meta": {"timing_ms": elapsed}
         }),
     }
+}
+
+#[derive(Clone, Copy)]
+enum QueryType {
+    References,
+    Implements,
+    Contains,
+    Defines,
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +416,88 @@ fn query_implements(conn: &Connection, cypher: &str) -> Result<Vec<Vec<Value>>> 
         ]);
     }
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Mermaid rendering
+// ---------------------------------------------------------------------------
+
+/// Convert query result rows to a Mermaid graph diagram.
+fn rows_to_mermaid(rows: &[Vec<Value>], query_type: QueryType) -> String {
+    let mut lines = vec!["graph LR".to_string()];
+
+    match query_type {
+        QueryType::Implements => {
+            // Rows: [impl_name, impl_kind, rel_kind, target_type, file]
+            for row in rows {
+                let from = val_str(&row[0]);
+                let rel = val_str(&row[2]);
+                let to = val_str(&row[3]);
+                lines.push(format!(
+                    "    {}[\"{}\"] -->|{}| {}[\"{}\"]",
+                    mermaid_id(&from), from, rel, mermaid_id(&to), to
+                ));
+            }
+        }
+        QueryType::References => {
+            // Rows: [from_name, from_kind, field_name, to_type_name, to_id, to_name]
+            for row in rows {
+                let from = val_str(&row[0]);
+                let field = val_str(&row[2]);
+                let to = val_str(&row[3]);
+                lines.push(format!(
+                    "    {}[\"{}\"] -->|.{}| {}[\"{}\"]",
+                    mermaid_id(&from), from, field, mermaid_id(&to), to
+                ));
+            }
+        }
+        QueryType::Contains => {
+            // Rows: [parent_name, parent_kind, child_name, child_kind, file]
+            for row in rows {
+                let parent = val_str(&row[0]);
+                let child = val_str(&row[2]);
+                let child_kind = val_str(&row[3]);
+                lines.push(format!(
+                    "    {}[\"{}\"] -->|contains| {}[\"{} ({})\"]",
+                    mermaid_id(&parent), parent,
+                    mermaid_id(&format!("{parent}_{child}")), child, child_kind
+                ));
+            }
+        }
+        QueryType::Defines => {
+            // Rows: [file, name, kind, language]
+            for row in rows {
+                let file = val_str(&row[0]);
+                let name = val_str(&row[1]);
+                let kind = val_str(&row[2]);
+                // Use short filename for the file node label
+                let short_file = file.rsplit('/').next().unwrap_or(&file);
+                lines.push(format!(
+                    "    {}[\"{}\"] -->|defines| {}[\"{} ({})\"]",
+                    mermaid_id(&file), short_file,
+                    mermaid_id(&format!("{file}_{name}")), name, kind
+                ));
+            }
+        }
+    }
+
+    if lines.len() == 1 {
+        lines.push("    empty[\"No results\"]".to_string());
+    }
+
+    lines.join("\n")
+}
+
+/// Sanitize a string into a valid Mermaid node ID.
+fn mermaid_id(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .collect()
+}
+
+/// Extract a string from a serde_json::Value, defaulting to "".
+fn val_str(v: &Value) -> String {
+    v.as_str().unwrap_or("").to_string()
 }
 
 /// Extract the argument after a keyword: "DEFINES src/main.rs" → Some("src/main.rs")

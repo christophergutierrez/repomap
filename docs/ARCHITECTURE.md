@@ -190,7 +190,7 @@ erDiagram
         text owner
         text name
         text indexed_at "ISO-8601"
-        int index_version "Current: 3"
+        int index_version "Current: 4"
         text git_head "Last commit hash"
         text source_files "JSON array"
         text languages "JSON map"
@@ -372,7 +372,11 @@ The `graph_query` tool accepts relationship-type queries:
 | `REFERENCES User` | All symbols referencing the User type |
 | `IMPLEMENTS Authenticatable` | All types implementing Authenticatable |
 
-Raw SQL `SELECT` queries are also supported for advanced use cases.
+Unrecognized queries return an error suggesting the appropriate structured tool.
+
+All queries support an optional `format: "mermaid"` parameter that returns a
+renderable Mermaid diagram instead of raw rows — useful for visualizing
+inheritance trees, class structure, or file contents.
 
 ### Why the Graph Matters
 
@@ -616,6 +620,8 @@ repomap/
 │       ├── discovery.rs        # File discovery + filtering
 │       ├── summarizer.rs       # 3-tier AI summarization
 │       ├── config.rs           # Environment-based configuration
+│       ├── hooks.rs            # Git hook installation/removal
+│       ├── stats.rs            # Usage statistics + token savings tracking
 │       └── parser/
 │           ├── mod.rs           # Parse orchestrator
 │           ├── extractor.rs     # AST walker + symbol extraction
@@ -623,7 +629,6 @@ repomap/
 │           ├── languages.rs     # Per-language extraction rules (13 langs)
 │           ├── imports.rs       # Import path extraction
 │           ├── impl_refs.rs     # Implementation/inheritance extraction
-│           ├── hierarchy.rs     # Parent-child resolution
 │           └── proto_refs.rs    # Protobuf field references
 └── tests/
     └── fixtures/               # Sample files for each language

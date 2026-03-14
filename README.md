@@ -128,7 +128,7 @@ repomap index-repo /path/to/repo --no-ai
 | `search_text` | Raw text search across file contents |
 | `find_dependents` | Find all symbols that reference a given symbol |
 | `find_implementations` | Find symbols that implement a given symbol |
-| `graph_query` | Execute a Cypher query on the relationship graph |
+| `graph_query` | Query relationships: DEFINES, CONTAINS, REFERENCES, IMPLEMENTS (supports Mermaid diagram output) |
 | `invalidate_cache` | Delete an index to force a full re-index |
 | `gain` | Token savings summary — queries saved, percentage reduced, per-tool breakdown |
 
@@ -180,6 +180,32 @@ Use the `gain` MCP tool to see a summary:
 - Per-tool breakdown (which tools save the most)
 
 Filter by repo or time range with the optional `repo` and `since_days` arguments.
+
+---
+
+## Visualizing relationships
+
+The `graph_query` tool supports Mermaid diagram output. Pass `format: "mermaid"`
+to get a renderable graph instead of raw JSON rows.
+
+For example, querying all inheritance relationships:
+
+```
+graph_query(repo="owner/repo", cypher="IMPLEMENTS", format="mermaid")
+```
+
+Returns a Mermaid diagram you can paste into any Markdown viewer:
+
+```mermaid
+graph LR
+    User["User"] -->|trait_impl| Authenticatable["Authenticatable"]
+    UserService["UserService"] -->|extends| BaseService["BaseService"]
+    SqlRepository["SqlRepository"] -->|implements| IRepository["IRepository"]
+```
+
+Works with all four relationship types: `IMPLEMENTS` (inheritance trees),
+`CONTAINS` (class/method structure), `DEFINES` (file contents), and
+`REFERENCES` (proto field types).
 
 ---
 
