@@ -49,26 +49,28 @@ pub fn find_dependents(repo: &str, symbol_id: &str, store: &IndexStore) -> Value
     let mut results = Vec::new();
 
     // Method 2: Proto REFERENCES — find all symbols that reference this type name.
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.id, s.name, s.kind, s.language
-             FROM proto_refs pr
-             JOIN symbols s ON s.id = pr.from_symbol_id
-             WHERE pr.to_type_name = ?
-               AND pr.from_symbol_id != ?",
-        )
-        .unwrap();
+    let mut stmt = match conn.prepare(
+        "SELECT s.id, s.name, s.kind, s.language
+         FROM proto_refs pr
+         JOIN symbols s ON s.id = pr.from_symbol_id
+         WHERE pr.to_type_name = ?
+           AND pr.from_symbol_id != ?",
+    ) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query failed: {e}")}),
+    };
 
-    let rows = stmt
-        .query_map(rusqlite::params![target_name, symbol_id], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-            ))
-        })
-        .unwrap();
+    let rows = match stmt.query_map(rusqlite::params![target_name, symbol_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => return json!({"error": format!("Query failed: {e}")}),
+    };
 
     for row in rows.flatten() {
         results.push(json!({
@@ -126,27 +128,29 @@ pub fn find_implementations(repo: &str, symbol_id: &str, store: &IndexStore) -> 
     let mut results = Vec::new();
 
     // Query impl_refs: find all types that implement/extend this type name.
-    let mut stmt = conn
-        .prepare(
-            "SELECT ir.from_symbol_id, ir.kind, s.name, s.kind, s.language, s.file
-             FROM impl_refs ir
-             JOIN symbols s ON s.id = ir.from_symbol_id
-             WHERE ir.to_type_name = ?",
-        )
-        .unwrap();
+    let mut stmt = match conn.prepare(
+        "SELECT ir.from_symbol_id, ir.kind, s.name, s.kind, s.language, s.file
+         FROM impl_refs ir
+         JOIN symbols s ON s.id = ir.from_symbol_id
+         WHERE ir.to_type_name = ?",
+    ) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": format!("Query failed: {e}")}),
+    };
 
-    let rows = stmt
-        .query_map(rusqlite::params![target_name], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, String>(5)?,
-            ))
-        })
-        .unwrap();
+    let rows = match stmt.query_map(rusqlite::params![target_name], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, String>(5)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => return json!({"error": format!("Query failed: {e}")}),
+    };
 
     for row in rows.flatten() {
         results.push(json!({

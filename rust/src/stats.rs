@@ -223,6 +223,9 @@ impl StatsDb {
 }
 
 /// Build a WHERE clause from optional repo and since filters.
+///
+/// `extra` is a raw SQL fragment appended to the WHERE clause (e.g. `" AND col > 0"`).
+/// It must be a static string with no `?` parameter placeholders — never pass user input.
 fn build_filter(repo: Option<&str>, since: Option<&str>, extra: &str) -> (String, Vec<String>) {
     let mut conditions = Vec::new();
     let mut params = Vec::new();

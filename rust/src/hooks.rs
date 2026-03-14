@@ -12,12 +12,15 @@ fn hook_script(repomap_bin: &str, repo_path: &str) -> String {
     format!(
         "#!/bin/sh\n\
          {MARKER}\n\
-         \"{repomap_bin}\" index-repo \"{repo_path}\" --incremental --no-ai >/dev/null 2>&1 &\n"
+         '{repomap_bin}' index-repo '{repo_path}' --incremental --no-ai >/dev/null 2>&1 &\n"
     )
 }
 
 /// Install post-merge and post-checkout hooks that trigger incremental reindexing.
-pub fn install_hooks(repo_path: &Path) -> anyhow::Result<()> {
+///
+/// If `force` is false and an existing hook not installed by repomap is found,
+/// returns an error instead of overwriting it.
+pub fn install_hooks(repo_path: &Path, force: bool) -> anyhow::Result<()> {
     let repo_path = repo_path
         .canonicalize()
         .context("Failed to resolve repository path")?;
@@ -45,6 +48,19 @@ pub fn install_hooks(repo_path: &Path) -> anyhow::Result<()> {
 
     for hook_name in HOOK_NAMES {
         let hook_path = hooks_dir.join(hook_name);
+
+        // Check for existing non-repomap hook
+        if hook_path.exists() && !force {
+            if let Ok(contents) = fs::read_to_string(&hook_path) {
+                if !contents.contains(MARKER) {
+                    bail!(
+                        "Existing {hook_name} hook found (not installed by repomap).\n\
+                         Use --force to overwrite, or manually add repomap to your hook."
+                    );
+                }
+            }
+        }
+
         fs::write(&hook_path, &script)
             .with_context(|| format!("Failed to write {hook_name} hook"))?;
         fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755))

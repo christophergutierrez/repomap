@@ -4,6 +4,9 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use crate::stats::StatsDb;
 use crate::storage::IndexStore;
 use crate::tools;
@@ -12,6 +15,7 @@ use crate::tools;
 pub async fn serve_stdio() -> Result<()> {
     let store = IndexStore::open_store(None)?;
     let stats_db = StatsDb::open(None).ok();
+    let content_size_cache: Mutex<HashMap<String, usize>> = Mutex::new(HashMap::new());
 
     let stdin = BufReader::new(tokio::io::stdin());
     let mut stdout = tokio::io::stdout();
@@ -50,7 +54,7 @@ pub async fn serve_stdio() -> Result<()> {
             "tools/list" => handle_list_tools(&id),
             "tools/call" => {
                 let params = request.get("params").cloned().unwrap_or(json!({}));
-                handle_call_tool(&id, &params, &store, stats_db.as_ref()).await
+                handle_call_tool(&id, &params, &store, stats_db.as_ref(), &content_size_cache).await
             }
             "notifications/cancelled" | "notifications/initialized" => continue,
             _ => json!({
@@ -101,7 +105,7 @@ fn handle_list_tools(id: &Value) -> Value {
     })
 }
 
-async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_db: Option<&StatsDb>) -> Value {
+async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_db: Option<&StatsDb>, content_size_cache: &Mutex<HashMap<String, usize>>) -> Value {
     let tool_name = params
         .get("name")
         .and_then(|n| n.as_str())
@@ -198,7 +202,7 @@ async fn handle_call_tool(id: &Value, params: &Value, store: &IndexStore, stats_
     if let Some(db) = stats_db {
         if tool_name != "gain" {
             let duration_ms = start.elapsed().as_millis() as u64;
-            let full_file_bytes = estimate_full_file_bytes(tool_name, &args, store);
+            let full_file_bytes = estimate_full_file_bytes(tool_name, &args, store, content_size_cache);
             db.record(tool_name, repo_arg.as_deref(), duration_ms, response_text.len(), full_file_bytes);
         }
     }
@@ -256,7 +260,7 @@ fn handle_gain(stats_db: Option<&StatsDb>, repo: Option<&str>, since_days: Optio
 }
 
 /// Estimate the full file size(s) that would have been loaded without repomap.
-fn estimate_full_file_bytes(tool_name: &str, args: &Value, store: &IndexStore) -> usize {
+fn estimate_full_file_bytes(tool_name: &str, args: &Value, store: &IndexStore, content_size_cache: &Mutex<HashMap<String, usize>>) -> usize {
     let repo = args.get("repo").and_then(|v| v.as_str()).unwrap_or("");
     let (owner, name) = match tools::resolve_repo_pub(repo, store) {
         Ok(r) => r,
@@ -302,8 +306,19 @@ fn estimate_full_file_bytes(tool_name: &str, args: &Value, store: &IndexStore) -
             }
         }
         "search_symbols" | "search_text" => {
-            // Search replaces grepping through all files — use total repo content size
-            total_content_size(&content_dir)
+            // Search replaces grepping through all files — use total repo content size.
+            // Cache the result to avoid re-walking the filesystem on every query.
+            let cache_key = content_dir.to_string_lossy().to_string();
+            if let Ok(cache) = content_size_cache.lock() {
+                if let Some(&cached) = cache.get(&cache_key) {
+                    return cached;
+                }
+            }
+            let size = total_content_size(&content_dir);
+            if let Ok(mut cache) = content_size_cache.lock() {
+                cache.insert(cache_key, size);
+            }
+            size
         }
         _ => 0,
     }

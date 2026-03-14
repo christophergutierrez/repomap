@@ -41,6 +41,10 @@ enum Commands {
     Init {
         /// Path to the git repository (defaults to current directory)
         path: Option<PathBuf>,
+
+        /// Overwrite existing non-repomap hooks
+        #[arg(long)]
+        force: bool,
     },
     /// Remove repomap git hooks
     Deinit {
@@ -198,7 +202,7 @@ async fn main() -> anyhow::Result<()> {
             println!("Index complete.");
             Ok(())
         }
-        Some(Commands::Init { path }) => {
+        Some(Commands::Init { path, force }) => {
             let path = path.unwrap_or_else(|| std::env::current_dir().expect("Cannot determine current directory"));
             let path = path.canonicalize()?;
 
@@ -218,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
             let symbol_count = result["symbol_count"].as_u64().unwrap_or(0);
             println!("Indexed: {file_count} files, {symbol_count} symbols");
 
-            hooks::install_hooks(&path)?;
+            hooks::install_hooks(&path, force)?;
             Ok(())
         }
         Some(Commands::Deinit { path }) => {

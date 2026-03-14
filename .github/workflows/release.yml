@@ -140,3 +140,16 @@ jobs:
             artifacts/*.tar.gz
             artifacts/checksums.txt
             artifacts/repomap.rb
+
+      - name: Update in-repo Homebrew formula
+        run: |
+          cp artifacts/repomap.rb Formula/repomap.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/repomap.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged, skipping commit"
+          else
+            git commit -m "chore: update Homebrew formula for ${GITHUB_REF_NAME} [skip ci]"
+            git push origin HEAD:main
+          fi
