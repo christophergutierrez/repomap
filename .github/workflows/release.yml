@@ -141,15 +141,22 @@ jobs:
             artifacts/checksums.txt
             artifacts/repomap.rb
 
-      - name: Update in-repo Homebrew formula
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp artifacts/repomap.rb Formula/repomap.rb
+          tmpdir=$(mktemp -d)
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/christophergutierrez/homebrew-repomap.git" "$tmpdir"
+          mkdir -p "$tmpdir/Formula"
+          cp artifacts/repomap.rb "$tmpdir/Formula/repomap.rb"
+          cd "$tmpdir"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/repomap.rb
+          git add repomap.rb
           if git diff --cached --quiet; then
             echo "Formula unchanged, skipping commit"
           else
-            git commit -m "chore: update Homebrew formula for ${GITHUB_REF_NAME} [skip ci]"
-            git push origin HEAD:main
+            git commit -m "Update repomap to ${GITHUB_REF_NAME}"
+            git push
           fi
+          rm -rf "$tmpdir"

@@ -91,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
             let owner = "local";
 
             let store = storage::IndexStore::open_store(None)?;
+            let incremental = incremental || store.index_exists(owner, &name);
 
             if incremental && store.index_exists(owner, &name) {
                 let files = discovery::discover_files(&path)?;

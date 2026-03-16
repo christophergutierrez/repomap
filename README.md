@@ -97,10 +97,10 @@ summaries by default since the AI assistant doesn't need them.
 
 ```sh
 # CLI with AI summaries (requires API key)
-repomap index-repo /path/to/repo
+repomap index /path/to/repo
 
 # CLI without AI summaries
-repomap index-repo /path/to/repo --no-ai
+repomap index /path/to/repo --no-ai
 ```
 
 | Variable | Purpose | Default |
@@ -158,15 +158,19 @@ After the first full index, re-indexing only re-parses files that changed.
 If you ran `repomap init`, this happens automatically via git hooks on
 every pull and branch switch.
 
-For manual re-indexing:
+For manual re-indexing, just run `index` again:
 
 ```bash
-repomap index /path/to/repo --incremental --no-ai
+repomap index /path/to/repo --no-ai
 ```
 
-The server computes SHA-256 hashes of all current files, diffs them against
+When an index already exists, repomap automatically runs in incremental
+mode — it computes SHA-256 hashes of all current files, diffs them against
 the stored hashes, and re-parses only the changed and new files.  Deleted
 files have their symbols removed.
+
+To force a full re-index, delete the existing index first with
+`invalidate_cache`.
 
 ---
 
