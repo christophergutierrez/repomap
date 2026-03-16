@@ -56,6 +56,10 @@ enum Commands {
         /// GitHub URL or owner/repo string
         url: String,
 
+        /// Only re-index changed files (auto-detected, kept for backward compatibility)
+        #[arg(long)]
+        incremental: bool,
+
         /// Skip AI-generated symbol summaries
         #[arg(long)]
         no_ai: bool,
@@ -234,6 +238,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::IndexRepo {
             url,
+            incremental: _,
             no_ai,
         }) => {
             println!("Indexing local repo: {url} ...");

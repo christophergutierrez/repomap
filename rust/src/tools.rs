@@ -783,55 +783,140 @@ pub async fn index_repo(
         Err(e) => return json!({"error": format!("Discovery failed: {e}")}),
     };
 
-    let mut parsed = match crate::parser::parse_files(&files, &path) {
-        Ok(s) => s,
-        Err(e) => return json!({"error": format!("Parse failed: {e}")}),
-    };
-
-    // Summarize.
-    if use_ai {
-        crate::summarizer::summarize_symbols(&mut parsed.symbols, true).await;
-    } else {
-        crate::summarizer::summarize_symbols_simple(&mut parsed.symbols);
-    }
-
-    // Read file contents.
-    let mut raw_files: HashMap<String, String> = HashMap::new();
-    let mut source_file_list: Vec<String> = Vec::new();
-    for fp in &files {
-        let rel = fp.strip_prefix(&path).unwrap_or(fp);
-        let rel_str = rel.to_string_lossy().to_string();
-        if let Ok(content) = std::fs::read_to_string(fp) {
-            raw_files.insert(rel_str.clone(), content);
-            source_file_list.push(rel_str);
+    // Auto-incremental: if an index already exists, only re-parse changed files.
+    if store.index_exists(&owner, &repo_name) {
+        let mut current_files: HashMap<String, String> = HashMap::new();
+        for fp in &files {
+            let rel = fp.strip_prefix(&path).unwrap_or(fp);
+            let rel_str = rel.to_string_lossy().to_string();
+            if let Ok(content) = std::fs::read_to_string(fp) {
+                current_files.insert(rel_str, content);
+            }
         }
-    }
-    source_file_list.sort();
 
-    let languages = crate::parser::languages::count_languages_from_files(&raw_files);
+        let (changed, new_files, deleted) =
+            match store.detect_changes(&owner, &repo_name, &current_files) {
+                Ok(r) => r,
+                Err(e) => return json!({"error": format!("Change detection failed: {e}")}),
+            };
 
-    match store.save_index(
-        &owner,
-        &repo_name,
-        &source_file_list,
-        &parsed.symbols,
-        &raw_files,
-        &languages,
-        None,
-        Some(&path),
-        &parsed.imports,
-        &parsed.proto_refs,
-        &parsed.impl_refs,
-    ) {
-        Ok(()) => json!({
-            "success": true,
-            "repo": format!("{owner}/{repo_name}"),
-            "file_count": source_file_list.len(),
-            "symbol_count": parsed.symbols.len(),
-            "languages": languages,
-            "_meta": { "timing_ms": elapsed_ms(start) }
-        }),
-        Err(e) => json!({"error": format!("Index save failed: {e}")}),
+        let total_affected = changed.len() + new_files.len() + deleted.len();
+        if total_affected == 0 {
+            return json!({
+                "success": true,
+                "repo": format!("{owner}/{repo_name}"),
+                "file_count": current_files.len(),
+                "symbol_count": store.count_symbols(&owner, &repo_name).unwrap_or(0),
+                "incremental": true,
+                "changed": 0,
+                "_meta": { "timing_ms": elapsed_ms(start) }
+            });
+        }
+
+        let affected: Vec<std::path::PathBuf> = changed
+            .iter()
+            .chain(new_files.iter())
+            .map(|rel| path.join(rel))
+            .collect();
+
+        let mut parsed = match crate::parser::parse_files(&affected, &path) {
+            Ok(s) => s,
+            Err(e) => return json!({"error": format!("Parse failed: {e}")}),
+        };
+
+        if use_ai {
+            crate::summarizer::summarize_symbols(&mut parsed.symbols, true).await;
+        } else {
+            crate::summarizer::summarize_symbols_simple(&mut parsed.symbols);
+        }
+
+        let languages = crate::parser::languages::count_languages_from_files(&current_files);
+
+        let raw_files: HashMap<String, String> = changed
+            .iter()
+            .chain(new_files.iter())
+            .filter_map(|rel| current_files.remove_entry(rel))
+            .collect();
+
+        match store.incremental_save(
+            &owner,
+            &repo_name,
+            &changed,
+            &new_files,
+            &deleted,
+            &parsed.symbols,
+            &raw_files,
+            &languages,
+            Some(&path),
+            &parsed.imports,
+            &parsed.proto_refs,
+            &parsed.impl_refs,
+        ) {
+            Ok(()) => json!({
+                "success": true,
+                "repo": format!("{owner}/{repo_name}"),
+                "file_count": files.len(),
+                "symbol_count": parsed.symbols.len(),
+                "incremental": true,
+                "changed": changed.len(),
+                "new": new_files.len(),
+                "deleted": deleted.len(),
+                "languages": languages,
+                "_meta": { "timing_ms": elapsed_ms(start) }
+            }),
+            Err(e) => return json!({"error": format!("Incremental save failed: {e}")}),
+        }
+    } else {
+        let mut parsed = match crate::parser::parse_files(&files, &path) {
+            Ok(s) => s,
+            Err(e) => return json!({"error": format!("Parse failed: {e}")}),
+        };
+
+        // Summarize.
+        if use_ai {
+            crate::summarizer::summarize_symbols(&mut parsed.symbols, true).await;
+        } else {
+            crate::summarizer::summarize_symbols_simple(&mut parsed.symbols);
+        }
+
+        // Read file contents.
+        let mut raw_files: HashMap<String, String> = HashMap::new();
+        let mut source_file_list: Vec<String> = Vec::new();
+        for fp in &files {
+            let rel = fp.strip_prefix(&path).unwrap_or(fp);
+            let rel_str = rel.to_string_lossy().to_string();
+            if let Ok(content) = std::fs::read_to_string(fp) {
+                raw_files.insert(rel_str.clone(), content);
+                source_file_list.push(rel_str);
+            }
+        }
+        source_file_list.sort();
+
+        let languages = crate::parser::languages::count_languages_from_files(&raw_files);
+
+        match store.save_index(
+            &owner,
+            &repo_name,
+            &source_file_list,
+            &parsed.symbols,
+            &raw_files,
+            &languages,
+            None,
+            Some(&path),
+            &parsed.imports,
+            &parsed.proto_refs,
+            &parsed.impl_refs,
+        ) {
+            Ok(()) => json!({
+                "success": true,
+                "repo": format!("{owner}/{repo_name}"),
+                "file_count": source_file_list.len(),
+                "symbol_count": parsed.symbols.len(),
+                "languages": languages,
+                "_meta": { "timing_ms": elapsed_ms(start) }
+            }),
+            Err(e) => json!({"error": format!("Index save failed: {e}")}),
+        }
     }
 }
 
