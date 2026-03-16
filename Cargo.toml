@@ -1,6 +1,6 @@
 [package]
 name = "repomap"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Code knowledge graph — tree-sitter AST parsing, FTS5 search, and byte-offset symbol retrieval"
 license = "MIT"
