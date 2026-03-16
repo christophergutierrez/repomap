@@ -6,6 +6,7 @@ pub mod proto_refs;
 pub mod symbols;
 
 use anyhow::Result;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use symbols::Symbol;
 
@@ -24,7 +25,20 @@ pub fn parse_files(files: &[PathBuf], repo_root: &Path) -> Result<ParseResult> {
     let mut all_proto_refs = Vec::new();
     let mut all_impl_refs = Vec::new();
 
-    for path in files {
+    let total = files.len();
+    let show_progress = total >= 50 && std::io::stderr().is_terminal();
+
+    for (i, path) in files.iter().enumerate() {
+        if show_progress && (i % 25 == 0 || i + 1 == total) {
+            let pct = ((i + 1) as f64 / total as f64 * 100.0) as u32;
+            let filled = (pct as usize) / 2;
+            let bar: String = "█".repeat(filled) + &"░".repeat(50 - filled);
+            eprint!("\r  Parsing [{bar}] {pct:>3}% ({}/{})", i + 1, total);
+            if i + 1 == total {
+                eprintln!();
+            }
+            let _ = std::io::stderr().flush();
+        }
         let language = match languages::language_for_extension(path) {
             Some(l) => l,
             None => continue,

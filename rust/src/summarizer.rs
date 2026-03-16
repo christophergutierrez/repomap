@@ -4,6 +4,8 @@
 //! Tier 2 — AI batch summarization (requires API key or local LLM)
 //! Tier 3 — Signature fallback (always works)
 
+use std::io::{IsTerminal, Write};
+
 use serde_json::json;
 use tracing::{info, warn};
 
@@ -347,6 +349,10 @@ pub async fn summarize_symbols(symbols: &mut Vec<Symbol>, use_ai: bool) {
                 .map(|(i, _)| i)
                 .collect();
 
+            let total_needs = needs_summary.len();
+            let show_progress = total_needs >= 20 && std::io::stderr().is_terminal();
+            let mut summarized = 0usize;
+
             let batch_size = 10;
             for chunk in needs_summary.chunks(batch_size) {
                 // Gather mutable references to the symbols in this batch.
@@ -364,6 +370,18 @@ pub async fn summarize_symbols(symbols: &mut Vec<Symbol>, use_ai: bool) {
                 // Put them back.
                 for (&idx, sym) in chunk.iter().zip(batch_symbols.into_iter()) {
                     symbols[idx] = sym;
+                }
+
+                summarized += chunk.len();
+                if show_progress {
+                    let pct = (summarized as f64 / total_needs as f64 * 100.0) as u32;
+                    let filled = (pct as usize) / 2;
+                    let bar: String = "█".repeat(filled) + &"░".repeat(50 - filled);
+                    eprint!("\r  Summarizing [{bar}] {pct:>3}% ({summarized}/{total_needs})");
+                    if summarized >= total_needs {
+                        eprintln!();
+                    }
+                    let _ = std::io::stderr().flush();
                 }
             }
         }
